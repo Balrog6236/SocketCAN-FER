@@ -64,6 +64,7 @@
 #include "canframelen.h"
 
 #define MAXSOCK 16    /* max. number of CAN interfaces given on the cmdline */
+#define CAN_ERROR_FLAG 0x20000000U /* if bit 29 is 1 then this is error frame */
 
 #define PERCENTRES 5 /* resolution in percent for bargraph */
 #define NUMBAR (100/PERCENTRES) /* number of bargraph elements */
@@ -87,6 +88,8 @@ static unsigned char color;
 static unsigned char bargraph;
 static enum cfl_mode mode = CFL_WORSTCASE;
 static char *prg;
+static int err_count = 0;
+static can_err_mask_t err_mask = 0x1FFFFFFFU; // mask to NOT filter our errors
 
 void print_usage(char *prg)
 {
@@ -170,32 +173,32 @@ void printstats(int signo)
 			break;
 		}
 	}
-
+        printf(" devname@bitrate     received frames      received bits(total)     received bits (payload)   busload percentage  current error count\n");
 	for (i=0; i<currmax; i++) {
 
 		if (color) {
 			if (i%2)
 				printf("%s", FGRED);
 			else
-				printf("%s", FGBLUE);
+				printf("%s", FGMAGENTA);
 		}
 
 		if (stat[i].bitrate)
 			percent = (stat[i].recv_bits_total*100)/stat[i].bitrate;
 		else
 			percent = 0;
-
-		printf(" %*s@%-*d %5d %7d %6d %3d%%",
+		printf(" %*s@%-*d             %5d               %7d                    %6d                    %3d%%                      %d",
 		       max_devname_len, stat[i].devname,
 		       max_bitrate_len, stat[i].bitrate,
 		       stat[i].recv_frames,
 		       stat[i].recv_bits_total,
 		       stat[i].recv_bits_payload,
-		       percent);
+		       percent,
+                       err_count);
 
 		if (bargraph) {
 
-			printf(" |");
+			printf("          |");
 
 			if (percent > 100)
 				percent = 100;
@@ -311,6 +314,9 @@ int main(int argc, char **argv)
 			perror("socket");
 			return 1;
 		}
+                setsockopt(s[i], SOL_CAN_RAW, CAN_RAW_ERR_FILTER,
+               &err_mask, sizeof(err_mask));
+
 
 		nptr = strchr(ptr, '@');
 
@@ -398,6 +404,7 @@ int main(int argc, char **argv)
 					return 1;
 				}
 
+                                if (frame.can_id & CAN_ERROR_FLAG) ++err_count; // add 1 to the counter if this is error message
 				stat[i].recv_frames++;
 				stat[i].recv_bits_payload += frame.can_dlc*8;
 				stat[i].recv_bits_total += can_frame_length((struct canfd_frame*)&frame,

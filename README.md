@@ -2,6 +2,11 @@
 <img src="https://github.com/linux-can/can-logos/raw/master/png/SocketCAN-logo-60dpi.png" alt="SocketCAN logo"/>
 </p>
 
+### Modifications made for college assingment in files:
+* candump
+* cansniffer
+* canbusload
+
 ### SocketCAN userspace utilities and tools
 
 This repository contains some userspace utilities for Linux CAN

@@ -58,6 +58,7 @@
 #include <sys/ioctl.h>
 #include <sys/uio.h>
 #include <net/if.h>
+#include <linux/can/raw.h>
 
 #include <linux/can.h>
 #include <linux/can/bcm.h>
@@ -73,6 +74,7 @@
 #define DISPLAY 2 /* is on the screen */
 #define UPDATE  4 /* needs to be printed on the screen */
 #define CLRSCR  8 /* clear screen in next loop */
+#define CAN_ERROR_FLAG 0x20000000U /* error message flag is on bit 29 0010 0000 0000 0000 0000 0000 0000 0000*/
 
 /* flags testing & setting */
 
@@ -118,6 +120,9 @@ static unsigned char binary;
 static unsigned char binary_gap;
 static unsigned char color;
 static char *interface;
+static int err_count = 0;
+static int msg_count = 0;
+static can_err_mask_t err_mask = 0x1FFFFFFFU; // mask to NOT filter our errors
 
 void rx_setup (int fd, int id);
 void rx_delete (int fd, int id);
@@ -288,6 +293,13 @@ int main(int argc, char **argv)
 		perror("socket");
 		return 1;
 	}
+        setsockopt(s, SOL_CAN_RAW, CAN_RAW_ERR_FILTER,
+               &err_mask, sizeof(err_mask));
+        int recv_own_msgs = 1; /* 0 = disabled (default), 1 = enabled */
+
+    setsockopt(s, SOL_CAN_RAW, CAN_RAW_RECV_OWN_MSGS,
+               &recv_own_msgs, sizeof(recv_own_msgs));
+
 
 	addr.can_family = AF_CAN;
 
@@ -517,6 +529,10 @@ int handle_bcm(int fd, long currcms){
 	}
 
 	sniftab[id].current = bmsg.frame;
+        if (bmsg.frame.can_id & CAN_ERROR_FLAG) ++err_count; // if bit 29 is 1 then this is error message
+//        if (bmsg.frame.can_id == 0x7DF) ++err_count;
+        ++msg_count;
+// 0x2000000U = 0010 0000 0000 0000 0000 0000 0000
 	for (i=0; i < 8; i++)
 		sniftab[id].marker.data[i] |= sniftab[id].current.data[i] ^ sniftab[id].last.data[i];
 
@@ -588,7 +604,8 @@ int handle_timeo(int fd, long currcms){
 				sniftab[i].laststamp = sniftab[i].currstamp;
 			}
 	}
-
+        printf("\nCurrent error count: %d\n", err_count);
+        printf("\nMessage count: %d\n", msg_count);
 	return 1; /* ok */
 
 };
@@ -608,7 +625,6 @@ void print_snifline(int id){
 
 	if (diffsec > 10)
 		diffsec = 9, diffusec = 999999;
-
 	printf("%ld.%06ld  %3X  ", diffsec, diffusec, id);
 
 	if (binary) {
